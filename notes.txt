@@ -1,0 +1,31 @@
+screen:
+    == server - selector ==
+    [ screen buffer goes here ]
+    [ screen buffer goes here ]
+    [ screen buffer goes here ]
+    previous selector < [current] > next selector
+
+keys:
+    * h = back in history
+    * o = forward in history
+    * p = history list screen
+    * j = scroll down
+    * k = scroll up
+    * l = navigate to selected
+    * r = reload current page
+    * ? = help screen?
+
+pages:
+    * reading content (paged content)
+    * help screen with a few commands
+    * listing history with pointer
+    * download file location (for binaries)
+    * settings?
+    * Logs?
+
+
+settings:
+    * browser command
+    * default download dir
+    * key bindings?
+    * image viewer
