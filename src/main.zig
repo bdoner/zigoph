@@ -6,8 +6,8 @@ const gdisplay = @import("display.zig");
 
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    
+    //defer _ = gpa.deinit();
+
     var allocator = gpa.allocator();
 
     // adamsgaard.dk
@@ -15,28 +15,45 @@ pub fn main() anyerror!void {
     var client = gclient.Client.init(allocator, "sdf.org", 70);
     defer client.deinit();
 
-    var display = try gdisplay.Display.init();
+    var display = try gdisplay.Display.init(&client.displayBuffer);
     defer display.deinit();
 
-    const indexPage = client.getIndex() catch @panic("Error listing index directory.");
-    try display.setTopLine(indexPage.displayStr, indexPage.domain, indexPage.selectorStr);
+    const dispHelper = struct {
+        pub fn update(a: std.mem.Allocator, d: gdisplay.Display, c: gclient.Client, item: gopher.Item) !void {
+            try d.setTopLine(item.displayStr, item.host, item.selectorStr);
 
-    const hist = try client.getHistory();
-    try display.setBottomLine(hist);
-    allocator.free(hist);
+            const h = try c.getHistory();
+            defer a.free(h);
+
+            try d.setBottomLine(h);
+        }
+    };
+
+    const indexPage = client.getIndex() catch @panic("Error listing index directory.");
+    if (indexPage) |ip| {
+        try dispHelper.update(allocator, display, client, ip);
+    }
 
     loop: while (true) {
+        try display.redraw();
+
         const chr = try std.io.getStdIn().reader().readByte();
         switch (chr) {
             'r' => {
-                client.refreshPage() catch |err| {
-                    try std.io.getStdErr().writer().print("Error listing directory: {s}\n", .{err});
-                };
+                const _rp = try client.refreshPage();
+                if (_rp) |rp| {
+                    try dispHelper.update(allocator, display, client, rp);
+                }
             },
-            'l' => try client.navigateToSelected(),
+            'l' => {
+                const _np = try client.navigateToSelected();
+                if (_np) |np| {
+                    try dispHelper.update(allocator, display, client, np);
+                }
+            },
             //'l' => try client.goBack(),
-            'j' => client.navDown(),
-            'k' => client.navUp(),
+            'k' => try client.navUp(),
+            'j' => try client.navDown(),
             'q' => break :loop,
             else => {},
         }

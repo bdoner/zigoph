@@ -8,6 +8,8 @@ const ansi = @import("ansi");
 const win32 = @import("win32");
 
 pub const Display = struct {
+    contentBuffer: *[]const u8,
+
     const Self = @This();
 
     var h_in: HANDLE = undefined;
@@ -16,7 +18,7 @@ pub const Display = struct {
     var originalStdInMode: u32 = 0;
     var originalStdOutMode: u32 = 0;
 
-    pub fn init() !Display {
+    pub fn init(contentBuffer: *[]const u8) !Display {
 
         // Store initial consolemode for stdin and stdout
         h_in = console.GetStdHandle(console.STD_INPUT_HANDLE);
@@ -28,7 +30,9 @@ pub const Display = struct {
         // Enable vt100 sequence handling on windows. Changes the ConsoleMode
         try enableVt100Parsing();
 
-        var s = Display{};
+        var s = Display{
+            .contentBuffer = contentBuffer,
+        };
         // Hide Cursor
         //try s.write("\x1B[?25l", .{});
 
@@ -75,6 +79,11 @@ pub const Display = struct {
         } else {
             try self.write("{s} [" ++ comptime ansi.color.Underline("{s}]") ++ "] {s}", .{ hist[0], hist[1], hist[2] });
         }
+    }
+
+    pub fn redraw(self: Self) !void {
+        try self.write(comptime ansi.csi.CursorPos(2, 1), .{});
+        try self.write("{s}", .{self.contentBuffer.*});
     }
 
     fn write(_: Self, comptime format: []const u8, args: anytype) !void {

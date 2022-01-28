@@ -4,12 +4,14 @@ pub const Item = struct {
     itemType: ItemType,
     displayStr: []const u8,
     selectorStr: []const u8,
-    domain: []const u8,
+    host: []const u8,
     port: u16,
-    //buffer: []const u8,
 
-    pub fn parseDirItem(item: []const u8) ?Item {
+
+    // Slices are owned by the caller
+    pub fn parseDirItem(allocator: std.mem.Allocator, item: []const u8) !?Item {
         if (item.len == 0) return null;
+        if (item.len == 1 and item[0] == '.') return null;
 
         const type_txt = item[0];
         const type_enum = ItemType.getType(type_txt) orelse {
@@ -18,18 +20,18 @@ pub const Item = struct {
             return null; // Ignore unknown types.
         };
 
-        var colIt = std.mem.tokenize(u8, item, "\t");
+        var colIt = std.mem.split(u8, item, "\t");
         const displ = colIt.next() orelse return null;
         const selector = colIt.next() orelse return null;
-        const domain = colIt.next() orelse return null;
+        const host = colIt.next() orelse return null;
         const port_txt = colIt.next() orelse return null;
-        const port = std.fmt.parseInt(u16, port_txt, 10) catch return null;
+        const port = std.fmt.parseInt(u16, port_txt, 10) catch 0;
 
         return Item{
             .itemType = type_enum,
-            .displayStr = displ[1..], //Skip the first type char
-            .selectorStr = selector,
-            .domain = domain,
+            .displayStr = try allocator.dupe(u8, displ[1..]), //Skip the first type char
+            .selectorStr = try allocator.dupe(u8, selector),
+            .host = try allocator.dupe(u8, host),
             .port = port,
         };
     }
@@ -65,7 +67,7 @@ pub const ItemType = enum(u8) {
         return null;
     }
 
-    pub fn isSelectable(self: ItemType) bool {
+    pub fn isSelectable(self: @This()) bool {
         // zig fmt: off
         return switch (self) {
             .txt_f, 
