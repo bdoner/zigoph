@@ -28,7 +28,7 @@ pub const Display = struct {
         originalStdOutMode = try getConsoleMode(h_out);
 
         // Enable vt100 sequence handling on windows. Changes the ConsoleMode
-        try enableVt100Parsing();
+        //try enableVt100Parsing();
 
         var s = Display{
             .contentBuffer = contentBuffer,
@@ -37,10 +37,10 @@ pub const Display = struct {
         //try s.write("\x1B[?25l", .{});
 
         // Switch to alternate screen buffer
-        try s.write("\x1B[?1049h", .{});
+        //try s.write("\x1B[?1049h", .{});
 
         // Set scroll margins for top and bottom.
-        try s.write("\x1B[{d};{d}r", .{ 1, 1 });
+        //try s.write("\x1B[{d};{d}r", .{ 1, 1 });
         return s;
     }
 

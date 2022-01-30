@@ -5,14 +5,17 @@ const gopher = @import("gopher.zig");
 const gdisplay = @import("display.zig");
 
 pub fn main() anyerror!void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //defer _ = gpa.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{ .verbose_log = true }){};
+    defer {
+        _ = gpa.deinit();
+    }
 
     var allocator = gpa.allocator();
 
     // adamsgaard.dk
-    // 46.23.94.178
-    var client = gclient.Client.init(allocator, "sdf.org", 70);
+    //   - 46.23.94.178
+    // sdf.org
+    var client = gclient.Client.init(allocator, "adamsgaard.dk", 70);
     defer client.deinit();
 
     var display = try gdisplay.Display.init(&client.displayBuffer);

@@ -19,13 +19,15 @@ pub const Client = struct {
             _ = std.os.windows.WSAStartup(2, 2) catch @panic("failed to call WSAStartup");
         }
 
+        var initResp = allocator.create(Response) catch @panic("OOM creating response");
+        initResp.* = Response.init(allocator);
         return .{
             .allocator = allocator,
             .host = host,
             .port = port,
             .selectedIndex = 0,
             .displayBuffer = &"".*,
-            .lastResp = Response.init(allocator),
+            .lastResp = initResp,
             .history = std.ArrayList(Item).init(allocator),
         };
     }
@@ -33,6 +35,10 @@ pub const Client = struct {
     pub fn deinit(self: Self) void {
         self.history.deinit();
         self.allocator.free(self.displayBuffer);
+
+        self.lastResp.deinit();
+        self.allocator.destroy(self.lastResp);
+
         if (builtin.os.tag == .windows) {
             std.os.windows.WSACleanup() catch {}; // Don't care :))
         }
@@ -40,9 +46,11 @@ pub const Client = struct {
 
     pub fn getIndex(self: *Self) !?Item {
         const itm = Item{
+            .allocator = self.allocator,
+
             .itemType = .menu,
-            .displayStr = "/",
-            .selectorStr = "",
+            .displayStr = "Contact",
+            .selectorStr = "/contact.gph",
             .host = self.host,
             .port = self.port,
         };
@@ -118,13 +126,15 @@ pub const Client = struct {
         var respBody = try conn.reader().readAllAlloc(self.allocator, std.math.maxInt(usize));
         defer self.allocator.free(respBody);
 
-        var resp = Response.init(self.allocator);
-        if (item.itemType.isSelectable()) {
-            self.lastResp.deinit();
-            self.lastResp = resp;
-        }
+        //if (item.itemType.isSelectable()) {
+        self.lastResp.deinit();
+        self.allocator.destroy(self.lastResp);
 
-        try resp.fill(item.itemType, respBody);
+        self.lastResp = try self.allocator.create(Response);
+        self.lastResp.* = Response.init(self.allocator);
+        //}
+
+        try self.lastResp.fill(item.itemType, respBody);
         try self.renderStateToDisplayBuffer();
 
         return item;
@@ -158,24 +168,20 @@ pub const Response = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator) *Response {
-        var r = allocator.create(Response) catch @panic("OOM Creating response");
-        r.buffer = null;
-        r.allocator = allocator;
-        r.items = std.ArrayList(Item).init(allocator);
-
-        return r;
+    pub fn init(allocator: std.mem.Allocator) Response {
+        return .{
+            .buffer = null,
+            .allocator = allocator,
+            .items = std.ArrayList(Item).init(allocator),
+        };
     }
 
     pub fn deinit(self: *Self) void {
         if (self.buffer) |b| {
             self.allocator.free(b);
         }
-        for(self.items.items) |item| {
-            self.allocator.free(item.host);
-            self.allocator.free(item.selectorStr);
-            self.allocator.free(item.displayStr);
-
+        for (self.items.items) |item| {
+            item.deinit();
         }
         self.items.deinit();
     }
@@ -190,7 +196,7 @@ pub const Response = struct {
         if (itemType.isSelectable()) {
             var lineIt = std.mem.tokenize(u8, body, "\r\n");
             while (lineIt.next()) |line| {
-                if (try Item.parseDirItem(self.allocator, line)) |item| {
+                if (try Item.parseAlloc(self.allocator, line)) |item| {
                     try self.items.append(item);
                 } else {
                     break;

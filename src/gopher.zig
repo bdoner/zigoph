@@ -1,15 +1,18 @@
 const std = @import("std");
 
 pub const Item = struct {
+    allocator: std.mem.Allocator,
+
     itemType: ItemType,
     displayStr: []const u8,
     selectorStr: []const u8,
     host: []const u8,
     port: u16,
 
+    const Self = @This();
 
-    // Slices are owned by the caller
-    pub fn parseDirItem(allocator: std.mem.Allocator, item: []const u8) !?Item {
+    // Call deinit on the returned item to cleanup
+    pub fn parseAlloc(allocator: std.mem.Allocator, item: []const u8) !?Item {
         if (item.len == 0) return null;
         if (item.len == 1 and item[0] == '.') return null;
 
@@ -28,12 +31,20 @@ pub const Item = struct {
         const port = std.fmt.parseInt(u16, port_txt, 10) catch 0;
 
         return Item{
+            .allocator = allocator,
+
             .itemType = type_enum,
             .displayStr = try allocator.dupe(u8, displ[1..]), //Skip the first type char
             .selectorStr = try allocator.dupe(u8, selector),
             .host = try allocator.dupe(u8, host),
             .port = port,
         };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.allocator.free(self.displayStr);
+        self.allocator.free(self.selectorStr);
+        self.allocator.free(self.host);
     }
 };
 
