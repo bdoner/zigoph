@@ -3,16 +3,17 @@ const builtin = @import("builtin");
 const Pkg = std.build.Pkg;
 const string = []const u8;
 
-pub const cache = ".zigmod\\deps";
+pub const cache = ".zigmod/deps";
 
 pub fn addAllTo(exe: *std.build.LibExeObjStep) void {
+    checkMinZig(builtin.zig_version, exe);
     @setEvalBranchQuota(1_000_000);
     for (packages) |pkg| {
         exe.addPackage(pkg.pkg.?);
     }
     var llc = false;
     var vcpkg = false;
-    inline for (std.meta.declarations(package_data)) |decl| {
+    inline for (comptime std.meta.declarations(package_data)) |decl| {
         const pkg = @as(Package, @field(package_data, decl.name));
         inline for (pkg.system_libs) |item| {
             exe.linkSystemLibrary(item);
@@ -26,6 +27,7 @@ pub fn addAllTo(exe: *std.build.LibExeObjStep) void {
             exe.addCSourceFile(@field(dirs, decl.name) ++ "/" ++ item, pkg.c_source_flags);
             llc = true;
         }
+        vcpkg = vcpkg or pkg.vcpkg;
     }
     if (llc) exe.linkLibC();
     if (builtin.os.tag == .windows and vcpkg) exe.addVcpkgPaths(.static) catch |err| @panic(@errorName(err));
@@ -40,6 +42,11 @@ pub const Package = struct {
     system_libs: []const string = &.{},
     vcpkg: bool = false,
 };
+
+fn checkMinZig(current: std.SemanticVersion, exe: *std.build.LibExeObjStep) void {
+    const min = std.SemanticVersion.parse("null") catch return;
+    if (current.order(min).compare(.lt)) @panic(exe.builder.fmt("Your Zig version v{} does not meet the minimum build requirement of v{}", .{current, min}));
+}
 
 pub const dirs = struct {
     pub const _root = "";
@@ -76,6 +83,6 @@ pub const pkgs = struct {
 };
 
 pub const imports = struct {
-    pub const ansi = @import(".zigmod\\deps/v/git/github.com/nektro/zig-ansi/commit-d4a53bcac5b87abecc65491109ec22aaf5f3dc2f/src/lib.zig");
-    pub const win32 = @import(".zigmod\\deps/v/git/github.com/marlersoft/zigwin32/commit-032a1b51b83b8fe64e0a97d7fe5da802065244c6/win32.zig");
+    pub const ansi = @import(".zigmod/deps/v/git/github.com/nektro/zig-ansi/commit-d4a53bcac5b87abecc65491109ec22aaf5f3dc2f/src/lib.zig");
+    pub const win32 = @import(".zigmod/deps/v/git/github.com/marlersoft/zigwin32/commit-032a1b51b83b8fe64e0a97d7fe5da802065244c6/win32.zig");
 };
