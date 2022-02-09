@@ -29,3 +29,24 @@ settings:
     * default download dir
     * key bindings?
     * image viewer
+
+
+
+write top and bottom
+go to line 2
+clear buffer window
+write items out from [0..buffer.len - 1]
+
+------------------+
+    variables     |
+------------------+
+ws = window slice |
+s = selected line |
+w = window size   |
+bl = buffer.len   |
+------------------+-------------------+
+if(s - w/2 < 0) ws = 0..ws            |
+else if(s + w/2 > ws) ws = bl-ws..ws  |
+else ws = s-ws/2..s+ws/2              |
+--------------------------------------+
+
