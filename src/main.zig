@@ -42,10 +42,8 @@ pub fn main() anyerror!void {
         null,
     );
 
-    const trns = try allocator.create(gopher.Transaction);
+    const trns = try gopher.Transaction.execute(allocator, rqst);
     defer trns.deinit();
-
-    trns.* = try gopher.Transaction.execute(allocator, rqst);
 
     state = .{
         .selectedLine = 0,
@@ -67,7 +65,7 @@ pub fn main() anyerror!void {
                 // the previous transaction is first free'd.
 
                 state.transaction.deinit();
-                state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
+                state.transaction = try gopher.Transaction.execute(allocator, state.request);
 
                 state.selectedLine = 0;
 
@@ -92,7 +90,7 @@ pub fn main() anyerror!void {
                     try state.history.append(state.request);
 
                     state.transaction.deinit();
-                    state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
+                    state.transaction = try gopher.Transaction.execute(allocator, state.request);
 
                     state.selectedLine = 0;
 
@@ -114,7 +112,7 @@ pub fn main() anyerror!void {
                     state.request = req;
 
                     state.transaction.deinit();
-                    state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
+                    state.transaction = try gopher.Transaction.execute(allocator, state.request);
 
                     state.selectedLine = 0;
 

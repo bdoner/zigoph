@@ -1,18 +1,24 @@
-const std = @import("std");
 const builtin = @import("builtin");
+const std = @import("std");
+const ansi = @import("ansi");
+
+const win32 = @import("win32");
+
+// *** windows ***
 const console = win32.system.console;
 const HANDLE = win32.foundation.HANDLE;
 const WIN32_ERROR = win32.foundation.WIN32_ERROR;
 
-const ansi = @import("ansi");
-const win32 = @import("win32");
-
-const TIOCGWINSZ = 0x5413;
 var h_in: HANDLE = undefined;
 var h_out: HANDLE = undefined;
 
 var originalStdInMode: u32 = 0;
 var originalStdOutMode: u32 = 0;
+
+// *** *nix stuff ***
+const TIOCGWINSZ = 0x5413;
+var original_termios: std.os.termios = undefined;
+var tty: std.fs.File = undefined;
 
 pub fn init() !void {
     errdefer deinit();
@@ -25,14 +31,17 @@ pub fn init() !void {
         originalStdOutMode = try getConsoleMode(h_out);
 
         // Enable vt100 sequence handling on windows. Changes the ConsoleMode
-        try enableVt100Parsing();
+    } else {
+        tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .{ .read = true, .write = true } });
+        original_termios = std.os.tcgetattr(tty.handle);
     }
 
+    try enableVt100Parsing();
     // Hide Cursor
     //try _write("\x1B[?25l", .{});
 
     // Switch to alternate screen buffer
-    try _write("\x1B[?1049h", .{});
+    //try _write("\x1B[?1049h", .{});
 
     const consoleHeight = try getConsoleHeight();
     // Set scroll region to exclude top and bottom.
@@ -48,12 +57,15 @@ pub fn deinit() void {
     _write("\x1B[r", .{}) catch {};
 
     // Switch to main screen buffer
-    _write("\x1B[?1049l", .{}) catch {};
+    //_write("\x1B[?1049l", .{}) catch {};
 
     if (builtin.os.tag == .windows) {
         // Restore ConsoleMode to original values
         setConsoleMode(h_in, originalStdInMode) catch {};
         setConsoleMode(h_out, originalStdOutMode) catch {};
+    } else {
+        std.os.tcsetattr(tty.handle, .FLUSH, original_termios) catch {};
+        tty.close();
     }
 }
 
@@ -153,22 +165,34 @@ fn getConsoleMode(handle: HANDLE) !u32 {
 }
 
 fn enableVt100Parsing() !void {
-    if (builtin.os.tag != .windows) {
-        return;
+    if (builtin.os.tag == .windows) {
+
+        // Set stdout to process vt100 escape sequences
+        _ = console.SetConsoleMode(h_out, console.CONSOLE_MODE.initFlags(.{
+            .ENABLE_PROCESSED_INPUT = 1, //ENABLE_PROCESSED_OUTPUT
+            .ENABLE_LINE_INPUT = 1, //ENABLE_WRAP_AT_EOL_OUTPUT
+            .ENABLE_ECHO_INPUT = 1, //ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        }));
+
+        // Set stdin to not wait for newline
+        _ = console.SetConsoleMode(h_in, console.CONSOLE_MODE.initFlags(.{
+            .ENABLE_LINE_INPUT = 0, //ENABLE_WRAP_AT_EOL_OUTPUT
+            .ENABLE_ECHO_INPUT = 0, //ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        }));
+    } else {
+        var raw = original_termios;
+        raw.lflag &= ~@as(
+            std.os.linux.tcflag_t,
+            std.os.linux.ECHO | std.os.linux.ICANON | std.os.linux.ISIG | std.os.linux.IEXTEN,
+        );
+        raw.iflag &= ~@as(
+            std.os.linux.tcflag_t,
+            std.os.linux.IXON | std.os.linux.ICRNL | std.os.linux.BRKINT | std.os.linux.INPCK | std.os.linux.ISTRIP,
+        );
+        raw.cc[std.os.system.V.TIME] = 0;
+        raw.cc[std.os.system.V.MIN] = 1;
+        try std.os.tcsetattr(tty.handle, .FLUSH, raw);
     }
-
-    // Set stdout to process vt100 escape sequences
-    _ = console.SetConsoleMode(h_out, console.CONSOLE_MODE.initFlags(.{
-        .ENABLE_PROCESSED_INPUT = 1, //ENABLE_PROCESSED_OUTPUT
-        .ENABLE_LINE_INPUT = 1, //ENABLE_WRAP_AT_EOL_OUTPUT
-        .ENABLE_ECHO_INPUT = 1, //ENABLE_VIRTUAL_TERMINAL_PROCESSING
-    }));
-
-    // Set stdin to not wait for newline
-    _ = console.SetConsoleMode(h_in, console.CONSOLE_MODE.initFlags(.{
-        .ENABLE_LINE_INPUT = 0, //ENABLE_WRAP_AT_EOL_OUTPUT
-        .ENABLE_ECHO_INPUT = 0, //ENABLE_VIRTUAL_TERMINAL_PROCESSING
-    }));
 }
 
 fn setConsoleMode(handle: HANDLE, mode: u32) !void {

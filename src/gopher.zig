@@ -207,7 +207,7 @@ pub const Transaction = union(TransactionType) {
 
     /// executes a request and returns the response in the form of a Transaction. Each type of transaction should be handled individually.
     /// The caller must call `deinit()` on either the returned transaction *or* the active union member, but **not** both.
-    pub fn execute(allocator: std.mem.Allocator, request: *const Request) !Transaction {
+    pub fn execute(allocator: std.mem.Allocator, request: *const Request) !*Transaction {
         var query: []const u8 = undefined;
         var buff: [255]u8 = undefined;
         if (request.requestType == .FullTextSearch) {
@@ -227,7 +227,8 @@ pub const Transaction = union(TransactionType) {
         const result = try stream.reader().readAllAlloc(allocator, std.math.maxInt(usize));
         defer allocator.free(result);
 
-        return switch (request.requestType) {
+        const tr = try allocator.create(Transaction);
+        tr.* = switch (request.requestType) {
             .Menu => Transaction{
                 .Menu = MenuTransaction{
                     .allocator = allocator,
@@ -255,6 +256,8 @@ pub const Transaction = union(TransactionType) {
                 },
             },
         };
+
+        return tr;
     }
 
     /// This is equvalent to calling deinit on the active union tag.
