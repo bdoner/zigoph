@@ -42,13 +42,15 @@ pub fn main() anyerror!void {
         null,
     );
 
-    var trns = try gopher.Transaction.execute(allocator, rqst);
+    const trns = try allocator.create(gopher.Transaction);
     defer trns.deinit();
+
+    trns.* = try gopher.Transaction.execute(allocator, rqst);
 
     state = .{
         .selectedLine = 0,
         .request = rqst,
-        .transaction = &trns,
+        .transaction = trns,
         .history = &history,
     };
 
@@ -65,7 +67,7 @@ pub fn main() anyerror!void {
                 // the previous transaction is first free'd.
 
                 state.transaction.deinit();
-                state.transaction = &(try gopher.Transaction.execute(allocator, state.request));
+                state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
 
                 state.selectedLine = 0;
 
@@ -74,6 +76,7 @@ pub fn main() anyerror!void {
             'l' => {
                 // follow selected link if possible.
                 // done by reading the currently selected Entry and create and execute a new request,
+
                 const entity = try getSelectedEntity();
                 if (entity) |ent| {
                     state.request = try gopher.Request.new(
@@ -89,7 +92,7 @@ pub fn main() anyerror!void {
                     try state.history.append(state.request);
 
                     state.transaction.deinit();
-                    state.transaction = &(try gopher.Transaction.execute(allocator, state.request));
+                    state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
 
                     state.selectedLine = 0;
 
@@ -98,16 +101,20 @@ pub fn main() anyerror!void {
             },
             'h' => {
                 // pop a request from the history stack and request the request.
+                if (state.history.items.len < 2) {
+                    continue;
+                }
+
                 var curReq = state.history.popOrNull(); // remove current request
-                if (curReq) |r| { 
-                    r.deinit(); // if it's removed from the history list it must be deinitialized. 
+                if (curReq) |r| {
+                    r.deinit(); // if it's removed from the history list it must be deinitialized.
                 }
                 var prevRequest = state.history.popOrNull(); // take previous
                 if (prevRequest) |req| {
                     state.request = req;
 
                     state.transaction.deinit();
-                    state.transaction = &(try gopher.Transaction.execute(allocator, state.request));
+                    state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
 
                     state.selectedLine = 0;
 
@@ -203,7 +210,6 @@ fn printTransactionResult() !void {
                 if (idx < sliceStart) continue;
                 if (idx > sliceEnd) continue;
 
-                try std.io.getStdOut().writer().print(comptime ansi.csi.EraseInLine(2), .{});
                 if (idx == state.selectedLine) {
                     try std.io.getStdOut().writer().print(comptime ansi.color.Underline("[{s:>8}] {s}"), .{ @tagName(ent.fieldType), ent.displayStr });
                 } else {
@@ -237,6 +243,6 @@ fn printTransactionResult() !void {
                 }
             }
         },
-        else => @panic("transaction type not implemented"),
+        else => try std.io.getStdOut().writer().print(comptime ansi.color.Fg(.Red, "Handler for {s} is not implemented."), .{@tagName(state.transaction.*)}),
     }
 }

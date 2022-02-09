@@ -33,8 +33,8 @@ pub const Request = struct {
         self.allocator.free(self.display);
         self.allocator.free(self.selector);
         self.allocator.free(self.host);
-        if (self.query) |q| {
-            self.allocator.free(q);
+        if (self.query) |*q| {
+            self.allocator.free(q.*);
         }
         self.allocator.destroy(self);
     }
@@ -66,16 +66,25 @@ const MenuTransaction = struct {
 
     const Self = @This();
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self) void {
         self.allocator.free(self.body);
-        if (self.entities) |ents| {
-            self.allocator.free(ents);
+        if (self.entities) |*ents| {
+            std.log.warn("\n@TypeName(ents) = {s}", .{@typeName(@TypeOf(ents))});
+            std.log.warn("*) free self.entities {x}", .{&self.entities.?});
+            std.log.warn("*) free ents          {x}", .{ents});
+
+            self.allocator.free(ents.*);
         }
+
+        self.allocator.destroy(self);
     }
 
     /// Returns an owned slice of Entities
     pub fn getEntities(self: *Self) ![]Entity {
         if (self.entities) |ents| {
+            //std.log.warn("1) self.entities reused {x}", .{&self.entities.?});
+            //std.log.warn("2) self.entities reused {x}", .{&ents});
+
             return ents;
         }
 
@@ -92,6 +101,8 @@ const MenuTransaction = struct {
         }
 
         self.entities = al.toOwnedSlice();
+
+        //std.log.warn("self.entities assigned {x}", .{&self.entities.?});
         return self.entities.?;
     }
 
@@ -143,8 +154,9 @@ const TextFileTransaction = struct {
 
     const Self = @This();
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self) void {
         self.allocator.free(self.body);
+        self.allocator.destroy(self);
     }
 
     pub fn getText(self: Self) []const u8 {
@@ -157,8 +169,9 @@ const BinaryFileTransaction = struct {
 
     const Self = @This();
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self) void {
         self.allocator.free(self.body);
+        self.allocator.destroy(self);
     }
 
     pub fn getContent(self: Self) []const u8 {
@@ -247,10 +260,10 @@ pub const Transaction = union(TransactionType) {
     /// This is equvalent to calling deinit on the active union tag.
     pub fn deinit(self: *Self) void {
         switch (self.*) {
-            .Menu => |t| t.deinit(),
-            .TextFile => |t| t.deinit(),
-            .BinaryFile => |t| t.deinit(),
-            .FullTextSearch => |t| t.deinit(),
+            .Menu => |*t| t.deinit(),
+            .TextFile => |*t| t.deinit(),
+            .BinaryFile => |*t| t.deinit(),
+            .FullTextSearch => |*t| t.deinit(),
         }
     }
 
