@@ -97,6 +97,10 @@ pub fn main() anyerror!void {
                         query,
                     );
 
+                    if (query) |q| {
+                        allocator.free(q);
+                    }
+
                     try state.history.append(state.request);
 
                     state.transaction.deinit();
