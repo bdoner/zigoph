@@ -15,7 +15,7 @@ var state: State = undefined;
 
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{ .verbose_log = false }){};
-    defer _ = gpa.deinit();
+    defer std.debug.assert(!gpa.deinit());
     var allocator = gpa.allocator();
 
     try gopher.init();
@@ -42,15 +42,18 @@ pub fn main() anyerror!void {
         null,
     );
 
-    const trns = try gopher.Transaction.execute(allocator, rqst);
-    defer trns.deinit();
-
     state = .{
         .selectedLine = 0,
         .request = rqst,
-        .transaction = trns,
+        .transaction = try allocator.create(gopher.Transaction),
         .history = &history,
     };
+
+    state.transaction.* = try gopher.Transaction.execute(allocator, rqst);
+    defer {
+        state.transaction.deinit();
+        allocator.destroy(state.transaction);
+    }
 
     try history.append(state.request);
     try printTransactionResult();
@@ -65,7 +68,7 @@ pub fn main() anyerror!void {
                 // the previous transaction is first free'd.
 
                 state.transaction.deinit();
-                state.transaction = try gopher.Transaction.execute(allocator, state.request);
+                state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
 
                 state.selectedLine = 0;
 
@@ -77,6 +80,13 @@ pub fn main() anyerror!void {
 
                 const entity = try getSelectedEntity();
                 if (entity) |ent| {
+                    var query: ?[]const u8 = null;
+                    if (ent.fieldType.toTransactionType()) |tt| {
+                        if (tt == .FullTextSearch) {
+                            query = try termhelper.getQueryInput(allocator);
+                        }
+                    }
+
                     state.request = try gopher.Request.new(
                         allocator,
                         ent.fieldType.toTransactionType().?,
@@ -84,13 +94,13 @@ pub fn main() anyerror!void {
                         ent.selectorStr,
                         ent.host,
                         ent.port,
-                        null,
+                        query,
                     );
 
                     try state.history.append(state.request);
 
                     state.transaction.deinit();
-                    state.transaction = try gopher.Transaction.execute(allocator, state.request);
+                    state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
 
                     state.selectedLine = 0;
 
@@ -112,7 +122,7 @@ pub fn main() anyerror!void {
                     state.request = req;
 
                     state.transaction.deinit();
-                    state.transaction = try gopher.Transaction.execute(allocator, state.request);
+                    state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
 
                     state.selectedLine = 0;
 
@@ -172,7 +182,7 @@ fn updateMetadata() !void {
 }
 
 fn printTransactionResult() !void {
-    const bufferArea = (try termhelper.getConsoleHeight()) - 3; // -1 for the top, -2 for the bottom
+    const bufferArea = (try termhelper.getConsoleSize()).nRows - 3; // -1 for the top, -2 for the bottom
     var halfBufferArea = @divFloor(bufferArea, 2);
     //if (halfBufferArea % 2 != 0) halfBufferArea -= 1;
 

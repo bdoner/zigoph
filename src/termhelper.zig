@@ -29,23 +29,22 @@ pub fn init() !void {
 
         originalStdInMode = try getConsoleMode(h_in);
         originalStdOutMode = try getConsoleMode(h_out);
-
-        // Enable vt100 sequence handling on windows. Changes the ConsoleMode
     } else {
         tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .{ .read = true, .write = true } });
         original_termios = std.os.tcgetattr(tty.handle);
     }
 
     try enableVt100Parsing();
+
     // Hide Cursor
-    //try _write("\x1B[?25l", .{});
+    try _write("\x1B[?25l", .{});
 
     // Switch to alternate screen buffer
-    //try _write("\x1B[?1049h", .{});
+    try _write("\x1B[?1049h", .{});
 
-    const consoleHeight = try getConsoleHeight();
+    const consoleHeight = try getConsoleSize();
     // Set scroll region to exclude top and bottom.
-    try _write("\x1B[{d};{d}r", .{ 2, consoleHeight - 1 });
+    try _write("\x1B[{d};{d}r", .{ 2, consoleHeight.nRows - 1 });
 }
 
 pub fn deinit() void {
@@ -57,7 +56,7 @@ pub fn deinit() void {
     _write("\x1B[r", .{}) catch {};
 
     // Switch to main screen buffer
-    //_write("\x1B[?1049l", .{}) catch {};
+    _write("\x1B[?1049l", .{}) catch {};
 
     if (builtin.os.tag == .windows) {
         // Restore ConsoleMode to original values
@@ -80,9 +79,9 @@ pub fn setCursorPos(x: u32, y: u32) !void {
 }
 
 pub fn setBottomLine(hist: [][]const u8) !void {
-    var botLine = try getConsoleHeight();
+    var cSize = try getConsoleSize();
 
-    try _write("\x1B[{d};{d}H", .{ botLine, 1 }); // SetCurPos (y, x)
+    try _write("\x1B[{d};{d}H", .{ cSize.nRows, 1 }); // SetCurPos (y, x)
     try _write(comptime ansi.csi.EraseInLine(2), .{});
 
     if (hist.len == 0) {
@@ -103,16 +102,68 @@ pub fn setBottomLine(hist: [][]const u8) !void {
     }
 }
 
-pub fn scrollTextUp() !void {
-    //const consoleHeight = try getConsoleHeight();
-    try _write(comptime ansi.csi.CursorPos(2, 1), .{}); // SetCurPos (y, x)
-    // try _write(comptime ansi.csi.CursorPos(consoleHeight - 2, 1), .{});
-    try _write(comptime ansi.csi.ScrollUp(1), .{});
-}
+pub fn getQueryInput(allocator: std.mem.Allocator) ![]const u8 {
+    const consSize = try getConsoleSize();
+    const consWidthHalf = @divFloor(consSize.nCols, 2);
 
-pub fn scrollTextDown() !void {
-    try _write(comptime ansi.csi.CursorPos(2, 1), .{});
-    try _write(comptime ansi.csi.ScrollDown(1), .{});
+    const boxWidth: u16 = @truncate(u16, @divFloor(consSize.nCols, 100) * 70);
+    const boxWidthHalf = @divFloor(boxWidth, 2);
+
+    const boxColOffset = consWidthHalf - boxWidthHalf;
+    // --------- draw input box
+
+    // top line
+    try _write("\x1B[{d};{d}H", .{ 13 - 1, boxColOffset }); // SetCurPos (y, x). Top line.
+    var i: u16 = 0;
+    while (i < boxWidth) : (i += 1) {
+        try _write("-", .{});
+    }
+
+    // middle "input" field
+    try _write("\x1B[{d};{d}H", .{ 13, boxColOffset - 1 }); // SetCurPos (y, x). Middle
+    try _write("|", .{});
+    try _write("\x1B[{d};{d}H", .{ 13, boxColOffset }); // SetCurPos (y, x). Middle
+    i = 0;
+    while (i < boxWidth) : (i += 1) {
+        try _write(" ", .{});
+    }
+    try _write("|", .{});
+
+    // bottom line
+    try _write("\x1B[{d};{d}H", .{ 13 + 1, boxColOffset }); // SetCurPos (y, x). Top line.
+
+    i = 0;
+    while (i < boxWidth) : (i += 1) {
+        try _write("-", .{});
+    }
+
+    // place cursor to input
+    try _write("\x1B[{d};{d}H", .{ 13, boxColOffset }); // SetCurPos (y, x). Top line.
+
+    var query = std.ArrayList(u8).init(allocator);
+    defer query.deinit();
+    loop: while (true) {
+        const chr = try std.io.getStdIn().reader().readByte();
+
+        // TODO: Handle backspace, ESC, NL, ... more?
+        switch (chr) {
+            '\r', '\n' => break :loop,
+            '\x08' => {
+                if (query.popOrNull()) |_| {
+                    try _write("{c} {c}", .{ chr, chr }); // BS, erase, BS
+                }
+            },
+            else => {
+                if(query.items.len >= boxWidth) {
+                    continue;
+                }
+                try query.append(chr);
+                try _write("{c}", .{chr});
+            },
+        }
+    }
+
+    return query.toOwnedSlice();
 }
 
 fn _write(comptime format: []const u8, args: anytype) !void {
@@ -133,7 +184,13 @@ const winsize = packed struct {
 const consoleerror = error{
     getHeightFailed,
 };
-pub fn getConsoleHeight() !u32 {
+
+const ConsoleSize = struct {
+    nCols: u32,
+    nRows: u32,
+};
+
+pub fn getConsoleSize() !ConsoleSize {
     if (builtin.os.tag == .windows) {
         var info: console.CONSOLE_SCREEN_BUFFER_INFO = undefined;
         const r = console.GetConsoleScreenBufferInfo(h_out, &info);
@@ -143,13 +200,13 @@ pub fn getConsoleHeight() !u32 {
             return consoleerror.getHeightFailed;
         }
 
-        return @intCast(u32, info.srWindow.Bottom);
+        return ConsoleSize{ .nRows = @intCast(u32, info.srWindow.Bottom), .nCols = @intCast(u32, info.srWindow.Right) };
     } else {
         // struct winsize { unsigned short ws_row, ws_col, ws_xpixel, ws_ypixel; };
         var w: winsize = undefined;
         _ = std.os.linux.ioctl(1, TIOCGWINSZ, @ptrToInt(&w));
 
-        return @intCast(u32, w.ws_row);
+        return ConsoleSize{ .nRows = w.ws_row, .nCols = w.ws_col };
     }
 }
 

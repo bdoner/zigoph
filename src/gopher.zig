@@ -66,17 +66,15 @@ const MenuTransaction = struct {
 
     const Self = @This();
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.allocator.free(self.body);
         if (self.entities) |*ents| {
-            std.log.warn("\n@TypeName(ents) = {s}", .{@typeName(@TypeOf(ents))});
-            std.log.warn("*) free self.entities {x}", .{&self.entities.?});
-            std.log.warn("*) free ents          {x}", .{ents});
+            // std.log.warn("\n@TypeName(ents) = {s}", .{@typeName(@TypeOf(ents))});
+            // std.log.warn("*) free self.entities {x}", .{&self.entities.?});
+            // std.log.warn("*) free ents          {x}", .{ents});
 
             self.allocator.free(ents.*);
         }
-
-        self.allocator.destroy(self);
     }
 
     /// Returns an owned slice of Entities
@@ -154,9 +152,8 @@ const TextFileTransaction = struct {
 
     const Self = @This();
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.allocator.free(self.body);
-        self.allocator.destroy(self);
     }
 
     pub fn getText(self: Self) []const u8 {
@@ -169,9 +166,8 @@ const BinaryFileTransaction = struct {
 
     const Self = @This();
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.allocator.free(self.body);
-        self.allocator.destroy(self);
     }
 
     pub fn getContent(self: Self) []const u8 {
@@ -207,7 +203,7 @@ pub const Transaction = union(TransactionType) {
 
     /// executes a request and returns the response in the form of a Transaction. Each type of transaction should be handled individually.
     /// The caller must call `deinit()` on either the returned transaction *or* the active union member, but **not** both.
-    pub fn execute(allocator: std.mem.Allocator, request: *const Request) !*Transaction {
+    pub fn execute(allocator: std.mem.Allocator, request: *const Request) !Transaction {
         var query: []const u8 = undefined;
         var buff: [255]u8 = undefined;
         if (request.requestType == .FullTextSearch) {
@@ -227,8 +223,7 @@ pub const Transaction = union(TransactionType) {
         const result = try stream.reader().readAllAlloc(allocator, std.math.maxInt(usize));
         defer allocator.free(result);
 
-        const tr = try allocator.create(Transaction);
-        tr.* = switch (request.requestType) {
+        return switch (request.requestType) {
             .Menu => Transaction{
                 .Menu = MenuTransaction{
                     .allocator = allocator,
@@ -256,17 +251,15 @@ pub const Transaction = union(TransactionType) {
                 },
             },
         };
-
-        return tr;
     }
 
     /// This is equvalent to calling deinit on the active union tag.
-    pub fn deinit(self: *Self) void {
-        switch (self.*) {
-            .Menu => |*t| t.deinit(),
-            .TextFile => |*t| t.deinit(),
-            .BinaryFile => |*t| t.deinit(),
-            .FullTextSearch => |*t| t.deinit(),
+    pub fn deinit(self: Self) void {
+        switch (self) {
+            .Menu => |t| t.deinit(),
+            .TextFile => |t| t.deinit(),
+            .BinaryFile => |t| t.deinit(),
+            .FullTextSearch => |t| t.deinit(),
         }
     }
 
