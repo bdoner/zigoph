@@ -30,8 +30,8 @@ pub fn init() !void {
         originalStdInMode = try getConsoleMode(h_in);
         originalStdOutMode = try getConsoleMode(h_out);
     } else {
-        tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .{ .read = true, .write = true } });
-        original_termios = std.os.tcgetattr(tty.handle);
+        tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
+        original_termios = try std.os.tcgetattr(tty.handle);
     }
 
     try enableVt100Parsing();
