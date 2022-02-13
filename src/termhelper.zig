@@ -42,9 +42,7 @@ pub fn init() !void {
     // Switch to alternate screen buffer
     try _write("\x1B[?1049h", .{});
 
-    const consoleHeight = try getConsoleSize();
-    // Set scroll region to exclude top and bottom.
-    try _write("\x1B[{d};{d}r", .{ 2, consoleHeight.nRows - 1 });
+    try setScrollRegion();
 }
 
 pub fn deinit() void {
@@ -68,7 +66,14 @@ pub fn deinit() void {
     }
 }
 
+fn setScrollRegion() !void {
+    const cSize = try getConsoleSize();
+    // Set scroll region to exclude top and bottom.
+    try _write("\x1B[{d};{d}r", .{ 2, cSize.nRows - 1 });
+}
+
 pub fn setTopLine(disp: []const u8, domain: []const u8, selector: []const u8) !void {
+    try setScrollRegion();
     try _write(comptime ansi.csi.CursorPos(1, 1), .{});
     try _write(comptime ansi.csi.EraseInLine(2), .{});
     try _write(comptime ansi.color.Fg(.Red, "{s}") ++ " - " ++ ansi.color.Bold("{s}") ++ "{s}", .{ disp, domain, selector });
@@ -79,6 +84,8 @@ pub fn setCursorPos(x: u32, y: u32) !void {
 }
 
 pub fn setBottomLine(hist: [][]const u8) !void {
+    try setScrollRegion();
+
     var cSize = try getConsoleSize();
 
     try _write("\x1B[{d};{d}H", .{ cSize.nRows, 1 }); // SetCurPos (y, x)
@@ -154,7 +161,7 @@ pub fn getQueryInput(allocator: std.mem.Allocator) ![]const u8 {
                 }
             },
             else => {
-                if(query.items.len >= boxWidth) {
+                if (query.items.len >= boxWidth) {
                     continue;
                 }
                 try query.append(chr);

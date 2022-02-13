@@ -62,6 +62,31 @@ pub fn main() anyerror!void {
         const chr = try std.io.getStdIn().reader().readByte();
         //std.log.warn("0x{x:0>2} ({d}) = '{c}'", .{ chr, chr, chr });
         switch (chr) {
+            'o' => {
+                // Open connection to new server
+                var host = try termhelper.getQueryInput(allocator);
+                defer allocator.free(host);
+
+                state.request = try gopher.Request.new(
+                    allocator,
+                    .Menu,
+                    "/",
+                    "/",
+                    host,
+                    70,
+                    null,
+                );
+
+
+                try state.history.append(state.request);
+
+                state.transaction.deinit();
+                state.transaction.* = try gopher.Transaction.execute(allocator, state.request);
+
+                state.selectedLine = 0;
+
+                try printTransactionResult();
+            },
             'r' => {
                 // reload current page.
                 // done by re-issuing the previous request.
@@ -136,18 +161,18 @@ pub fn main() anyerror!void {
             },
             'k' => {
                 if (state.selectedLine == 0) {
-                    continue;
+                    state.selectedLine = state.transaction.lines() - 1;
+                } else {
+                    state.selectedLine -= 1;
                 }
-
-                state.selectedLine -= 1;
                 try printTransactionResult();
             },
             'j' => {
-                if (state.selectedLine == state.transaction.lines()) {
-                    continue;
+                if (state.selectedLine == state.transaction.lines() - 1) {
+                    state.selectedLine = 0;
+                } else {
+                    state.selectedLine += 1;
                 }
-
-                state.selectedLine += 1;
                 try printTransactionResult();
             },
             'q' => break :loop,
@@ -212,29 +237,55 @@ fn printTransactionResult() !void {
         }
     }
 
-    try std.io.getStdOut().writer().print(comptime ansi.csi.EraseInDisplay(2), .{});
+    const stdio = struct {
+        pub fn print(comptime format: []const u8, args: anytype) !void {
+            try std.io.getStdOut().writer().print(format, args);
+        }
+    };
+
+    try stdio.print(comptime ansi.csi.EraseInDisplay(2), .{});
     try updateMetadata();
 
-    try std.io.getStdOut().writer().print(comptime ansi.csi.CursorPos(2, 1), .{});
+    try stdio.print(comptime ansi.csi.CursorPos(2, 1), .{});
     switch (state.transaction.*) {
         .Menu, .FullTextSearch => |*m| {
             for (try m.getEntities()) |ent, idx| {
                 if (idx < sliceStart) continue;
                 if (idx > sliceEnd) continue;
 
+                // switch (ent.fieldType) {
+                //     txt_f => '0',
+                //     menu => '1',
+                //     cso_book => '2',
+                //     err => '3',
+                //     binhex_f => '4',
+                //     msdos_f => '5',
+                //     uuenc_f => '6',
+                //     idx_srch => '7',
+                //     tel_sess => '8',
+                //     bin_f => '9',
+                //     red_srv => '+',
+                //     gif => 'g',
+                //     image => 'I',
+                //     tn3270 => 'T',
+                //     // Unofficial types?
+                //     info => 'i',
+                //     hlink => 'h',
+                // }
+
                 if (idx == state.selectedLine) {
-                    try std.io.getStdOut().writer().print(comptime ansi.color.Underline("[{s:>8}] {s}"), .{ @tagName(ent.fieldType), ent.displayStr });
+                    try stdio.print(comptime ansi.color.Underline("[{s:>8}] {s}"), .{ @tagName(ent.fieldType), ent.displayStr });
                 } else {
-                    try std.io.getStdOut().writer().print("[{s:>8}] {s}", .{ @tagName(ent.fieldType), ent.displayStr });
+                    try stdio.print("[{s:>8}] {s}", .{ @tagName(ent.fieldType), ent.displayStr });
                 }
 
                 if (idx != sliceEnd) {
-                    try std.io.getStdOut().writer().print("\n", .{});
+                    try stdio.print("\n", .{});
                 }
             }
         },
         .TextFile => |m| {
-            //try std.io.getStdOut().writer().print("{s}", .{m.getText()});
+            //try stdio.print("{s}", .{m.getText()});
 
             var txtIt = std.mem.split(u8, m.getText(), "\n");
             var idx: u32 = 0;
@@ -245,16 +296,16 @@ fn printTransactionResult() !void {
                 if (idx > sliceEnd) continue;
 
                 if (idx == state.selectedLine) {
-                    try std.io.getStdOut().writer().print(comptime ansi.color.Bold("{s}"), .{ent});
+                    try stdio.print(comptime ansi.color.Bold("{s}"), .{ent});
                 } else {
-                    try std.io.getStdOut().writer().print("{s}", .{ent});
+                    try stdio.print("{s}", .{ent});
                 }
 
                 if (idx != sliceEnd) {
-                    try std.io.getStdOut().writer().print("\n", .{});
+                    try stdio.print("\n", .{});
                 }
             }
         },
-        else => try std.io.getStdOut().writer().print(comptime ansi.color.Fg(.Red, "Handler for {s} is not implemented."), .{@tagName(state.transaction.*)}),
+        else => try stdio.print(comptime ansi.color.Fg(.Red, "Handler for {s} is not implemented."), .{@tagName(state.transaction.*)}),
     }
 }
