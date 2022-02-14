@@ -64,7 +64,13 @@ pub fn main() anyerror!void {
         switch (chr) {
             'o' => {
                 // Open connection to new server
-                var host = try termhelper.getQueryInput(allocator);
+                var hostPrompt = try termhelper.promptUserInput(allocator, "Enter hostname");
+                if (hostPrompt == null) {
+                    try printTransactionResult(); // Clear prompt
+                    continue;
+                }
+                const host = hostPrompt.?;
+
                 defer allocator.free(host);
 
                 state.request = try gopher.Request.new(
@@ -76,7 +82,6 @@ pub fn main() anyerror!void {
                     70,
                     null,
                 );
-
 
                 try state.history.append(state.request);
 
@@ -108,7 +113,11 @@ pub fn main() anyerror!void {
                     var query: ?[]const u8 = null;
                     if (ent.fieldType.toTransactionType()) |tt| {
                         if (tt == .FullTextSearch) {
-                            query = try termhelper.getQueryInput(allocator);
+                            query = try termhelper.promptUserInput(allocator, "Enter query");
+                            if (query == null) {
+                                try printTransactionResult(); // Clear prompt
+                                continue;
+                            }
                         }
                     }
 

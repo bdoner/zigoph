@@ -109,43 +109,121 @@ pub fn setBottomLine(hist: [][]const u8) !void {
     }
 }
 
-pub fn getQueryInput(allocator: std.mem.Allocator) ![]const u8 {
+/// Prompt the user for a single-line input such as a query or a hostname for searching or navigating.
+/// The user can cancel a prompt by hitting ESC in which case the result is null.
+pub fn promptUserInput(allocator: std.mem.Allocator, comptime title: []const u8) !?[]const u8 {
+    comptime {
+        const max_chars = 16;
+        if (title.len > max_chars) {
+            @compileError(std.fmt.comptimePrint("title cannot exceed {d} characters, but '" ++ title ++ "'' is {d} characters.", .{ max_chars, title.len }));
+        }
+
+        if (title.len == 0) {
+            @compileError("title must be given, but lenght of title was 0.");
+        }
+    }
+    const boxMinWidth = comptime title.len + 2 + 4 + 5; // 2 = margin around title, 4 for left side, 5 for right side (includes shadow)
     const consSize = try getConsoleSize();
     const consWidthHalf = @divFloor(consSize.nCols, 2);
 
-    const boxWidth: u16 = @truncate(u16, @divFloor(consSize.nCols, 100) * 70);
+    const boxWidth: u16 = @truncate(u16, @maximum(boxMinWidth, @divFloor(consSize.nCols, 100) * 70));
     const boxWidthHalf = @divFloor(boxWidth, 2);
 
     const boxColOffset = consWidthHalf - boxWidthHalf;
+
+    const consHalfHeight = @divFloor(consSize.nRows, 2);
     // --------- draw input box
+    // Box is a total of 7 rows tall. Topmost row is at consHalfHeight-3 and bottommost row is at consHalfHeight+3
+    // The input starts at consHalfHeight+4.
+    // The width is variable. Starts at boxColOffset and goes to boxColOffset+boxWidth
+    //
+    // Box is ▒ (177)
+    // Shadow is ░ (176)
+    // lines are ┐└│┘┌ ─
+
+    const box: []const u8 = &.{177};
+    const shadow: []const u8 = &.{176};
+    const line: []const u8 = &.{196};
+    const pipe: []const u8 = &.{179};
+    const cornBR: []const u8 = &.{217};
+    const cornTL: []const u8 = &.{218};
+    const cornTR: []const u8 = &.{191};
+    const cornBL: []const u8 = &.{192};
 
     // top line
-    try _write("\x1B[{d};{d}H", .{ 13 - 1, boxColOffset }); // SetCurPos (y, x). Top line.
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight - 3, boxColOffset });
     var i: u16 = 0;
-    while (i < boxWidth) : (i += 1) {
-        try _write("-", .{});
+    while (i < boxWidth - 1) : (i += 1) {
+        try _write(box, .{});
     }
 
-    // middle "input" field
-    try _write("\x1B[{d};{d}H", .{ 13, boxColOffset - 1 }); // SetCurPos (y, x). Middle
-    try _write("|", .{});
-    try _write("\x1B[{d};{d}H", .{ 13, boxColOffset }); // SetCurPos (y, x). Middle
+    // title line part 1
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight - 2, boxColOffset });
     i = 0;
-    while (i < boxWidth) : (i += 1) {
+    while (i < @divFloor(boxWidth - (title.len + 2 + 5), 2)) : (i += 1) { // (title.len + padding) + right side box
+        try _write(box, .{});
+    }
+
+    // title here
+    try _write(" {s} ", .{title});
+
+    // title line part 2
+    i += @truncate(u16, title.len + 2);
+    while (i < boxWidth - 1) : (i += 1) {
+        try _write(box, .{});
+    }
+    try _write(shadow, .{});
+
+    // Top text border
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight - 1, boxColOffset });
+    try _write(box ++ " " ++ cornTL, .{});
+    i = 3; // already offset from above write
+    while (i < boxWidth - 4) : (i += 1) {
+        try _write(line, .{});
+    }
+    try _write(cornTR ++ " " ++ box ++ shadow, .{});
+
+    // Input row
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight, boxColOffset });
+    try _write(box ++ " " ++ pipe, .{});
+    i = 3; // already offset from above write
+    while (i < boxWidth - 4) : (i += 1) {
         try _write(" ", .{});
     }
-    try _write("|", .{});
+    try _write(pipe ++ " " ++ box ++ shadow, .{});
 
-    // bottom line
-    try _write("\x1B[{d};{d}H", .{ 13 + 1, boxColOffset }); // SetCurPos (y, x). Top line.
+    // Bottom text border
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight + 1, boxColOffset });
+    try _write(box ++ " " ++ cornBL, .{});
+    i = 3; // already offset from above write
+    while (i < boxWidth - 4) : (i += 1) {
+        try _write(line, .{});
+    }
+    try _write(cornBR ++ " " ++ box ++ shadow, .{});
 
+    // Bottom box
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight + 2, boxColOffset });
     i = 0;
-    while (i < boxWidth) : (i += 1) {
-        try _write("-", .{});
+    while (i < boxWidth - 1) : (i += 1) {
+        try _write(box, .{});
+    }
+    try _write(shadow, .{});
+
+    // Bottom shadow
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight + 3, boxColOffset + 1 });
+    i = 0;
+    while (i < boxWidth - 1) : (i += 1) {
+        try _write(shadow, .{});
     }
 
     // place cursor to input
-    try _write("\x1B[{d};{d}H", .{ 13, boxColOffset }); // SetCurPos (y, x). Top line.
+    try _write("\x1B[{d};{d}H", .{ consHalfHeight, boxColOffset + 4 });
+
+    // Show cursor.
+    try _write("\x1B[?25h", .{});
+
+    // Hide Cursor
+    defer _write("\x1B[?25l", .{}) catch {};
 
     var query = std.ArrayList(u8).init(allocator);
     defer query.deinit();
@@ -155,7 +233,10 @@ pub fn getQueryInput(allocator: std.mem.Allocator) ![]const u8 {
         // TODO: Handle backspace, ESC, NL, ... more?
         switch (chr) {
             '\r', '\n' => break :loop,
-            '\x08' => {
+            '\x1B' => { // ESC key
+                return null;
+            },
+            '\x08' => { // Backspace key
                 if (query.popOrNull()) |_| {
                     try _write("{c} {c}", .{ chr, chr }); // BS, erase, BS
                 }
