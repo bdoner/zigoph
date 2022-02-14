@@ -141,14 +141,15 @@ pub fn promptUserInput(allocator: std.mem.Allocator, comptime title: []const u8)
     // Shadow is ░ (176)
     // lines are ┐└│┘┌ ─
 
-    const box: []const u8 = &.{177};
-    const shadow: []const u8 = &.{176};
-    const line: []const u8 = &.{196};
-    const pipe: []const u8 = &.{179};
-    const cornBR: []const u8 = &.{217};
-    const cornTL: []const u8 = &.{218};
-    const cornTR: []const u8 = &.{191};
-    const cornBL: []const u8 = &.{192};
+    const isWin = builtin.os.tag == .windows;
+    const box: []const u8 = if (isWin) &"\xb1".* else &"\u{2592}".*;
+    const shadow: []const u8 = if(isWin) &"\xb0".* else &"\u{2591}".*;// &.{176};
+    const line: []const u8 = if(isWin) &"\xc3".* else &"\u{2500}".*;// &.{196};
+    const pipe: []const u8 = if(isWin) &"\xb3".* else &"\u{2502}".*;// &.{179};
+    const cornBR: []const u8 = if(isWin) &"\xd9".* else &"\u{2518}".*;// &.{217};
+    const cornTL: []const u8 = if(isWin) &"\xda".* else &"\u{250c}".*;// &.{218};
+    const cornTR: []const u8 = if(isWin) &"\xbf".* else &"\u{2510}".*;// &.{191};
+    const cornBL: []const u8 = if(isWin) &"\xc0".* else &"\u{2514}".*;// &.{192};
 
     // top line
     try _write("\x1B[{d};{d}H", .{ consHalfHeight - 3, boxColOffset });

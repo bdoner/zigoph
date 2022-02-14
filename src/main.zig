@@ -14,7 +14,7 @@ const State = struct {
 var state: State = undefined;
 
 pub fn main() anyerror!void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{ .verbose_log = false }){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{ .verbose_log = false, .stack_trace_frames = 32 }){};
     defer std.debug.assert(!gpa.deinit());
     var allocator = gpa.allocator();
 
